@@ -183,7 +183,7 @@ function PublicAbout() {
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="text-center">
           <Badge variant="outline" className="mb-4">Sobre el Prototipo</Badge>
-          <h1 className="text-3xl font-bold tracking-tight">Sistema de análisis y laboratorio virtual</h1>
+          <h1 className="text-3xl font-bold tracking-tight">LeuNet</h1>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -196,10 +196,27 @@ function PublicAbout() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>
-                LeuNet es un prototipo desarrollado como parte de una tesis, orientado al análisis de imágenes microscópicas
-                relacionadas con LLA mediante EfficientNet-B3.
+                LeuNet es un prototipo desarrollado como parte de un trabajo de tesis, orientado al análisis de imágenes
+                microscópicas de células sanguíneas relacionadas con la leucemia linfoblástica aguda (LLA).
               </p>
               <p>
+                Para ello, LeuNet utiliza un modelo de aprendizaje profundo basado en EfficientNet-B3 que
+                clasifica las imágenes, y aplica Grad-CAM para mostrar qué regiones de la imagen influyeron en cada
+                predicción, de modo que el resultado no sea una caja negra y pueda ser revisado por el usuario.
+              </p>
+              <p>
+                El código fuente y el documento de la tesis están disponibles en el{' '}
+                <a
+                  href="https://github.com/JonathanP06511/LeuNet"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  repositorio de GitHub
+                </a>
+                .
+              </p>
+              <p className="font-medium text-foreground">
                 El sistema no reemplaza el diagnóstico médico profesional. Los resultados deben interpretarse como apoyo.
               </p>
             </CardContent>
@@ -213,9 +230,24 @@ function PublicAbout() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>Plataforma web que integra autenticación de usuarios, gestión de roles, análisis de imágenes microscópicas mediante inteligencia artificial, visualización Grad-CAM e historial de resultados.
-              </p>
-
+              <p>Plataforma web que reúne en un solo lugar:</p>
+              <ul className="space-y-2">
+                {[
+                  ['Análisis de imágenes', 'clasifica imágenes microscópicas de células sanguíneas como compatibles o no con LLA, con su nivel de confianza, mediante EfficientNet-B3.'],
+                  ['Interpretabilidad con Grad-CAM', 'muestra un mapa de calor y la región de la imagen que más influyó en la predicción.'],
+                  ['Reportes en PDF', 'genera un reporte descargable con el resultado, la confianza y las imágenes de cada análisis.'],
+                  ['Historial', 'permite consultar los análisis anteriores, revisar sus imágenes y descargar su reporte.'],
+                  ['Cuentas de usuario', 'registro con verificación por correo electrónico y foto de perfil.'],
+                  ['Panel administrativo', 'gestión de roles y cuentas, actividad del sistema por día y hora, e historial general.'],
+                ].map(([title, description]) => (
+                  <li key={title} className="flex gap-2">
+                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                    <span>
+                      <span className="font-medium text-foreground">{title}:</span> {description}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         </div>
