@@ -1033,6 +1033,16 @@ class ResendCodeRequest(BaseModel):
     email: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    name: str
+    avatar: str | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -1198,6 +1208,65 @@ def login(request: LoginRequest):
 @app.get("/auth/me")
 def me(current_user=Depends(get_current_user)):
     return public_user(current_user)
+
+
+# ============================================================================
+# PERFIL DEL USUARIO
+# ============================================================================
+
+@app.get("/profile")
+def get_profile(current_user=Depends(get_current_user)):
+    with get_db_connection() as conn:
+        stats = conn.execute(
+            """
+            SELECT COUNT(*) AS analysis_count,
+                   MAX(created_at) AS last_analysis_at,
+                   COALESCE(SUM(CASE WHEN model_prediction IN ('Leukemia', 'ALL') THEN 1 ELSE 0 END), 0) AS leukemia_count,
+                   COALESCE(SUM(CASE WHEN model_prediction IN ('Benign', 'Normal') THEN 1 ELSE 0 END), 0) AS benign_count
+            FROM prediction_history
+            WHERE user_id = ? AND difficulty = 'uploaded'
+            """,
+            (current_user["id"],)
+        ).fetchone()
+
+    return {**public_user(current_user), "created_at": current_user["created_at"], **dict(stats)}
+
+
+@app.put("/profile")
+def update_profile(request: ProfileUpdateRequest, current_user=Depends(get_current_user)):
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    avatar = validate_avatar(request.avatar)
+
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE users SET name = ?, avatar = ? WHERE id = ?",
+            (name, avatar, current_user["id"])
+        )
+        conn.commit()
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (current_user["id"],)).fetchone()
+
+    return public_user(user)
+
+
+@app.put("/profile/password")
+def change_password(request: PasswordChangeRequest, current_user=Depends(get_current_user)):
+    if not verify_password(request.current_password, current_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="La contraseña actual no es correcta")
+    if len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe tener mínimo 6 caracteres")
+    if verify_password(request.new_password, current_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe ser distinta de la actual")
+
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(request.new_password), current_user["id"])
+        )
+        conn.commit()
+
+    return {"updated": True}
 
 
 @app.get("/history")

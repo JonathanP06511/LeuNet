@@ -8,10 +8,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Brain, History, ShieldCheck } from 'lucide-react';
+import { Brain, History, ShieldCheck, UserRound } from 'lucide-react';
 import type { User } from '@/lib/api';
 
-export type DashboardAction = 'image-analysis' | 'laboratory' | 'history' | 'admin';
+export type DashboardAction = 'image-analysis' | 'laboratory' | 'history' | 'admin' | 'profile';
 
 interface DashboardMenuProps {
   user: User;
@@ -142,7 +142,7 @@ export function DashboardMenu({ user, onSelect }: DashboardMenuProps) {
 
         {isAdmin && (
           <Card
-            className="cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg lg:col-span-2"
+            className="cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg"
             onClick={() => onSelect('admin')}
           >
             <CardHeader>
@@ -179,6 +179,44 @@ export function DashboardMenu({ user, onSelect }: DashboardMenuProps) {
             </CardContent>
           </Card>
         )}
+
+        {/* Usuario normal: ocupa el ancho de dos tarjetas. Administrador: al lado del panel administrativo. */}
+        <Card
+          className={`cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg ${isAdmin ? '' : 'lg:col-span-2'}`}
+          onClick={() => onSelect('profile')}
+        >
+          <CardHeader>
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+              <UserRound className="h-7 w-7 text-primary" />
+            </div>
+
+            <CardTitle>Mi perfil</CardTitle>
+            <CardDescription>
+              Actualiza tu foto, tu nombre y tu contraseña, y revisa un resumen de tu actividad en el sistema.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div className="overflow-hidden rounded-xl border bg-[#eef1f6]">
+              <img
+                src="/perfil.png"
+                alt="Mi perfil"
+                className="h-40 w-full object-contain"
+              />
+            </div>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect('profile');
+              }}
+            >
+              Editar perfil
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

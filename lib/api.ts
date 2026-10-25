@@ -301,6 +301,55 @@ export async function getHistoryImages(historyId: number): Promise<HistoryImages
   return response.json();
 }
 
+export interface ProfileData extends User {
+  created_at: string;
+  analysis_count: number;
+  last_analysis_at: string | null;
+  leukemia_count: number;
+  benign_count: number;
+}
+
+export async function getProfile(): Promise<ProfileData> {
+  const response = await fetch(`${API_BASE_URL}/profile`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo cargar el perfil'));
+  }
+
+  return response.json();
+}
+
+// Guarda nombre y foto; actualiza también el usuario guardado para que el encabezado cambie al instante.
+export async function updateProfile(name: string, avatar: string | null): Promise<User> {
+  const response = await fetch(`${API_BASE_URL}/profile`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, avatar }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudieron guardar los cambios'));
+  }
+
+  const user: User = await response.json();
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  return user;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/profile/password`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo cambiar la contraseña'));
+  }
+}
+
 export async function getAdminUsers(): Promise<AdminUser[]> {
   const response = await fetch(`${API_BASE_URL}/admin/users`, {
     headers: authHeaders(),

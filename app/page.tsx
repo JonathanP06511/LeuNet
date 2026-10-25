@@ -13,6 +13,8 @@ import { ExamMode } from '@/components/exam-mode';
 import { ImageAnalysisSection } from '@/components/image-analysis/image-analysis-section';
 import { HistoryPanel } from '@/components/history-panel';
 import { AdminPanel } from '@/components/admin-panel';
+import { ProfilePanel } from '@/components/profile-panel';
+import { UserGuide } from '@/components/user-guide';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UserAvatar } from '@/components/user-avatar';
 import {
@@ -30,6 +32,7 @@ import {
   Database,
   Eye,
   FileText,
+  HelpCircle,
   FlaskConical,
   Info,
   LogIn,
@@ -40,8 +43,8 @@ import {
   XCircle,
 } from 'lucide-react';
 
-type PublicView = 'home' | 'about' | 'login';
-type AppView = DashboardAction | 'practice' | 'exam' | null;
+type PublicView = 'home' | 'about' | 'guide' | 'login';
+type AppView = DashboardAction | 'practice' | 'exam' | 'guide' | null;
 
 function PublicHeader({ currentView, onChangeView }: { currentView: PublicView; onChangeView: (view: PublicView) => void }) {
   return (
@@ -57,6 +60,9 @@ function PublicHeader({ currentView, onChangeView }: { currentView: PublicView; 
           </Button>
           <Button variant={currentView === 'about' ? 'default' : 'ghost'} size="sm" onClick={() => onChangeView('about')}>
             Acerca de
+          </Button>
+          <Button variant={currentView === 'guide' ? 'default' : 'ghost'} size="sm" onClick={() => onChangeView('guide')}>
+            Guía
           </Button>
           <ThemeToggle />
 
@@ -396,6 +402,19 @@ export default function Home() {
         <PublicHeader currentView={publicView} onChangeView={setPublicView} />
         {publicView === 'home' && <PublicHome onLogin={() => setPublicView('login')} />}
         {publicView === 'about' && <PublicAbout />}
+        {publicView === 'guide' && (
+          <section
+            className="min-h-screen bg-cover bg-center bg-no-repeat px-4 py-14"
+            style={{
+              backgroundImage:
+                "linear-gradient(var(--about-overlay), var(--about-overlay)), var(--hero-image)",
+            }}
+          >
+            <div className="mx-auto max-w-5xl">
+              <UserGuide />
+            </div>
+          </section>
+        )}
         {publicView === 'login' && <AuthForm onAuthenticated={(authenticatedUser) => { setUser(authenticatedUser); setView(null); }} />}
         <footer className="border-t px-4 py-6 text-center text-sm text-muted-foreground">
           <p>© 2026 Universidad Central del Ecuador. Todos los derechos reservados.</p>
@@ -418,6 +437,15 @@ export default function Home() {
               Bienvenido: <span className="font-medium text-foreground">{user.name}</span>
             </div>
             {user.role === 'ADMIN' && <Badge variant="outline">{user.role}</Badge>}
+            <Button
+              variant={view === 'guide' ? 'default' : 'ghost'}
+              size="icon"
+              aria-label="Guía de uso"
+              title="Guía de uso"
+              onClick={() => setView('guide')}
+            >
+              <HelpCircle className="h-5 w-5" />
+            </Button>
             <ThemeToggle />
             <Button variant="outline" size="sm" onClick={handleLogout}>Cerrar sesión</Button>
           </div>
@@ -431,6 +459,8 @@ export default function Home() {
         {view === 'exam' && <ExamMode onBack={() => setView('laboratory')} />}
         {view === 'history' && <HistoryPanel onBack={() => setView(null)} />}
         {view === 'admin' && user.role === 'ADMIN' && <AdminPanel onBack={() => setView(null)} />}
+        {view === 'profile' && <ProfilePanel onBack={() => setView(null)} onUserUpdated={setUser} />}
+        {view === 'guide' && <UserGuide onBack={() => setView(null)} />}
 
         {!view && (
           <div className="space-y-8">
