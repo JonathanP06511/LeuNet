@@ -1,0 +1,11 @@
+node_modules
+.next
+dist
+build
+.cache
+.venv
+__pycache__
+*.pyc
+.env
+backend/users.db
+tsconfig.tsbuildinfo
