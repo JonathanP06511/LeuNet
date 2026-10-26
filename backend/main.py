@@ -595,6 +595,17 @@ def validar_imagen_microscopica(image_bytes: bytes):
         (r > g * 0.75)
     ).mean()
 
+    # Tonos lila/rosado claros de núcleos con tinción más pálida (por ejemplo, otras imágenes
+    # del mismo dataset). Rojo y azul deben superar claramente al verde, lo que excluye a los
+    # glóbulos rojos, de tono lavanda-azulado.
+    morado_claro = (
+        (r > 150) &
+        (b > 170) &
+        (g < 175) &
+        (r > g * 1.18) &
+        (b > g * 1.25)
+    ).mean()
+
     # Tonos claros rosados/lilas compatibles con frotis sanguíneo teñido
     tonos_frotis_claros = (
         (r > 145) &
@@ -635,8 +646,8 @@ def validar_imagen_microscopica(image_bytes: bytes):
             detail="La imagen cargada no presenta las características visuales esperadas de un frotis sanguíneo microscópico."
         )
 
-    # Rechazo si no hay presencia suficiente de tonos morados/violetas
-    if morado_fuerte < 0.003 and morado_moderado < 0.015:
+    # Rechazo si no hay presencia suficiente de tonos morados/violetas (oscuros, moderados o claros)
+    if morado_fuerte < 0.003 and morado_moderado < 0.015 and morado_claro < 0.01:
         raise HTTPException(
             status_code=422,
             detail="La imagen no presenta núcleos o estructuras teñidas compatibles con una muestra microscópica."
@@ -798,88 +809,108 @@ def crear_mascara_nucleos_morados(original: Image.Image) -> np.ndarray:
     return mascara_array
 
 
+def detectar_celulas_tenidas(original: Image.Image) -> list[dict]:
+    """
+    Detecta las células teñidas (núcleos morados/lila) como regiones separadas.
+
+    Las células teñidas tienen rojo y azul claramente por encima del verde
+    (rojo/verde > 1.15 y azul/verde > 1.3). Los glóbulos rojos, de tono
+    lavanda-azulado, y el fondo no cumplen esa condición.
+    """
+
+    arr = np.asarray(original).astype(np.float32)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    gray = 0.299 * r + 0.587 * g + 0.114 * b
+    verde = np.maximum(g, 1.0)
+
+    mascara = (r > verde * 1.15) & (b > verde * 1.3) & (gray < 215)
+
+    # Cierre morfológico: une huecos dentro del núcleo (textura de la cromatina).
+    mascara_img = Image.fromarray(np.uint8(mascara) * 255)
+    mascara_img = mascara_img.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    mascara = np.asarray(mascara_img) > 0
+
+    alto, ancho = mascara.shape
+    visitado = np.zeros_like(mascara, dtype=bool)
+    celulas = []
+    area_minima = 250  # descarta plaquetas, restos de tinción y células muy recortadas
+
+    # Agrupa los píxeles conectados (vecindad de 4) en regiones.
+    for y0, x0 in zip(*np.nonzero(mascara)):
+        if visitado[y0, x0]:
+            continue
+        pila = [(y0, x0)]
+        visitado[y0, x0] = True
+        ys, xs = [], []
+        while pila:
+            y, x = pila.pop()
+            ys.append(y)
+            xs.append(x)
+            for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if 0 <= ny < alto and 0 <= nx < ancho and mascara[ny, nx] and not visitado[ny, nx]:
+                    visitado[ny, nx] = True
+                    pila.append((ny, nx))
+        if len(ys) >= area_minima:
+            celulas.append({"ys": np.array(ys), "xs": np.array(xs)})
+
+    return celulas
+
+
 def generar_marca_zona_principal(image_bytes: bytes, heatmap: np.ndarray) -> str:
     """
-    Genera una imagen con una marca visual en la zona de mayor influencia,
-    priorizando regiones moradas/violetas compatibles con núcleos celulares.
+    Marca con un círculo la célula teñida con mayor influencia según Grad-CAM.
 
-    Esta marca usa el mapa Grad-CAM filtrado, no el Grad-CAM crudo.
-    Así evita señalar bordes, esquinas o zonas sin estructuras celulares claras.
+    Se evalúa cada célula por separado (intensidad media de Grad-CAM dentro de ella)
+    y se marca la de mayor valor, sin considerar las que están pegadas al borde. Si no
+    queda ninguna célula, se marca el punto más intenso del mapa de calor fuera de los
+    bordes de la imagen.
     """
 
     original = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     original = original.resize(IMG_SIZE, Image.Resampling.LANCZOS)
-
     draw = ImageDraw.Draw(original)
 
-    # Redimensionar Grad-CAM al tamaño de la imagen
-    heatmap_img = Image.fromarray(np.uint8(255 * heatmap)).resize(
-        IMG_SIZE,
-        Image.Resampling.BICUBIC,
-    )
-
+    heatmap_img = Image.fromarray(np.uint8(255 * heatmap)).resize(IMG_SIZE, Image.Resampling.BICUBIC)
     heatmap_array = np.array(heatmap_img, dtype=np.float32) / 255.0
-    heatmap_array = np.power(heatmap_array, 0.8)
 
-    # Crear máscara de regiones moradas/violetas
-    mascara_morada = crear_mascara_nucleos_morados(original)
-
-    # Combinar Grad-CAM con la máscara morada
-    if mascara_morada.mean() > 0.003:
-        score_map = heatmap_array * mascara_morada
-    else:
-        score_map = heatmap_array.copy()
-
-    # Evitar que marque esquinas o bordes de la imagen
-    margen = 28
-    score_map[:margen, :] = 0
-    score_map[-margen:, :] = 0
-    score_map[:, :margen] = 0
-    score_map[:, -margen:] = 0
-
-    max_score = score_map.max()
-
-    # Si después del filtro no queda nada útil, usar heatmap normal sin bordes
-    if max_score <= 0:
-        score_map = heatmap_array.copy()
-        score_map[:margen, :] = 0
-        score_map[-margen:, :] = 0
-        score_map[:, :margen] = 0
-        score_map[:, -margen:] = 0
-        max_score = score_map.max()
-
-    if max_score <= 0:
+    if heatmap_array.max() <= 0:
         return pil_image_to_base64(original)
 
-    # Tomar la región más activa, no solo un pixel
-    threshold = max_score * 0.70
-    ys, xs = np.where(score_map >= threshold)
+    # Se ignoran las células cuyo centro está pegado al borde, donde suelen estar la escala
+    # y otras marcas de la imagen.
+    borde = 20
+    alto, ancho = heatmap_array.shape
 
-    if len(xs) == 0 or len(ys) == 0:
-        y, x = np.unravel_index(np.argmax(score_map), score_map.shape)
+    mejor = None
+    for celula in detectar_celulas_tenidas(original):
+        cy, cx = celula["ys"].mean(), celula["xs"].mean()
+        if min(cy, cx, alto - 1 - cy, ancho - 1 - cx) < borde:
+            continue
+        puntaje = float(heatmap_array[celula["ys"], celula["xs"]].mean())
+        if mejor is None or puntaje > mejor["puntaje"]:
+            mejor = {**celula, "puntaje": puntaje}
+
+    if mejor is not None:
+        x = int(mejor["xs"].mean())
+        y = int(mejor["ys"].mean())
+        radio_celula = float(np.sqrt(len(mejor["xs"]) / np.pi))
+        radio = int(min(48, max(16, radio_celula + 6)))
     else:
-        weights = score_map[ys, xs]
-        x = int(np.average(xs, weights=weights))
-        y = int(np.average(ys, weights=weights))
+        # Se ignoran los bordes, donde suelen estar la escala y otras marcas de la imagen.
+        margen = 28
+        interior = heatmap_array.copy()
+        interior[:margen, :] = 0
+        interior[-margen:, :] = 0
+        interior[:, :margen] = 0
+        interior[:, -margen:] = 0
+        y, x = np.unravel_index(np.argmax(interior), interior.shape)
+        radio = 24
 
-    # Radio de la marca
-    radio = 24
+    draw.ellipse([(x - radio, y - radio), (x + radio, y + radio)], outline=(255, 0, 0), width=4)
+    draw.ellipse([(x - 4, y - 4), (x + 4, y + 4)], fill=(255, 0, 0))
 
-    # Dibujar círculo rojo alrededor de la región principal
-    draw.ellipse(
-        [(x - radio, y - radio), (x + radio, y + radio)],
-        outline=(255, 0, 0),
-        width=4,
-    )
-
-    # Punto central
-    draw.ellipse(
-        [(x - 4, y - 4), (x + 4, y + 4)],
-        fill=(255, 0, 0),
-    )
-
-    
     return pil_image_to_base64(original)
+
 
 def generate_gradcam_visuals(image_bytes: bytes, heatmap: np.ndarray) -> tuple[str, str]:
     """
