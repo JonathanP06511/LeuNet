@@ -33,7 +33,7 @@ POST /predict
 5. El modelo Grad-CAM se dejó en:
 
 ```txt
-backend/models/efficientnetb3_binary_best.keras
+backend/models/efficientnetb3_binary.keras
 ```
 
 ## Cómo ejecutar

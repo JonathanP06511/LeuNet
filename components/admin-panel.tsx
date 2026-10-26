@@ -15,6 +15,8 @@ import { HistoryResultsTable } from '@/components/history-panel';
 import { AdminUsersTable } from '@/components/admin-users-table';
 import { ActivityHeatmap } from '@/components/activity-heatmap';
 import {
+  adminDeleteHistoryItem,
+  adminRestoreHistoryItem,
   getAdminActivity,
   getAdminHistory,
   getAdminUsers,
@@ -66,6 +68,22 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
 
     load();
   }, []);
+
+  // Eliminar u restaurar como administrador: el usuario deja de ver el análisis, el admin lo sigue viendo.
+  const handleHistoryAction = async (item: AdminHistoryItem) => {
+    const restoring = Boolean(item.admin_deleted_at);
+
+    if (restoring) {
+      await adminRestoreHistoryItem(item.id);
+    } else {
+      await adminDeleteHistoryItem(item.id);
+    }
+
+    const adminDeletedAt = restoring ? null : new Date().toISOString();
+    setHistory((current) =>
+      current.map((entry) => (entry.id === item.id ? { ...entry, admin_deleted_at: adminDeletedAt } : entry))
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -128,7 +146,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
               </CardHeader>
 
               <CardContent className="text-3xl font-bold">
-                {history.length}
+                {history.filter((item) => !item.admin_deleted_at).length}
               </CardContent>
             </Card>
           </div>
@@ -154,7 +172,10 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             <CardContent>
               <HistoryResultsTable
                 items={history}
-                showDeletedLabel
+                showStatusColumn
+                rowAction={(item) => (item.admin_deleted_at ? 'restore' : 'delete')}
+                onRowAction={handleHistoryAction}
+                confirmMessage="¿Eliminar este análisis? El usuario dejará de verlo."
                 getUser={(item) => ({
                   id: item.user_id,
                   name: item.user_name,

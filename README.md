@@ -28,7 +28,7 @@ LeuNet es un prototipo desarrollado como parte de un trabajo de tesis en la Univ
 | Tamaño de entrada | 300 × 300 píxeles |
 | Interpretabilidad | Grad-CAM |
 
-El modelo entrenado se incluye en `backend/models/efficientnetb3_binary_best.keras`.
+El modelo entrenado se incluye en `backend/models/efficientnetb3_binary.keras`.
 
 ## Tecnologías
 

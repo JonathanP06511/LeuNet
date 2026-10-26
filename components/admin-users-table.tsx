@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { PAGE_SIZE, TablePagination } from '@/components/table-pagination';
+import { TableSearch, matchesSearch } from '@/components/table-search';
 import { UserAvatar } from '@/components/user-avatar';
 import { updateUserActive, updateUserRole, type AdminUser } from '@/lib/api';
 
@@ -68,15 +69,22 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 
 export function AdminUsersTable({ users, currentUserId, onUserUpdated }: AdminUsersTableProps) {
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingAction, setPendingAction] = useState<UserAction | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const pageUsers = users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filteredUsers = users.filter((user) => matchesSearch(query, [user.name, user.email, user.role]));
+  const pageUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   // Se busca en la lista para que el panel refleje los cambios de rol o estado al instante.
   const selectedUser = users.find((user) => user.id === selectedId) ?? null;
   const isOwnAccount = selectedUser?.id === currentUserId;
+
+  const changeQuery = (value: string) => {
+    setQuery(value);
+    setPage(1);
+  };
 
   const openDetails = (user: AdminUser) => {
     setSelectedId(user.id);
@@ -121,7 +129,17 @@ export function AdminUsersTable({ users, currentUserId, onUserUpdated }: AdminUs
         <p className="mt-1 text-sm text-muted-foreground">Listado de cuentas registradas.</p>
       </div>
 
-      <table className="w-full table-fixed text-sm">
+      <TableSearch
+        value={query}
+        onChange={changeQuery}
+        placeholder="Buscar por nombre, correo o rol…"
+      />
+
+      {filteredUsers.length === 0 && (
+        <p className="py-6 text-sm text-muted-foreground">No hay usuarios que coincidan con tu búsqueda.</p>
+      )}
+
+      <table className={`w-full table-fixed text-sm ${filteredUsers.length === 0 ? 'hidden' : ''}`}>
         <colgroup>
           <col className="w-[19%]" />
           <col className="w-[25%]" />
@@ -176,7 +194,7 @@ export function AdminUsersTable({ users, currentUserId, onUserUpdated }: AdminUs
         </tbody>
       </table>
 
-      <TablePagination page={page} totalItems={users.length} onPageChange={setPage} />
+      <TablePagination page={page} totalItems={filteredUsers.length} onPageChange={setPage} />
 
       <Sheet open={selectedUser !== null} onOpenChange={(open) => !open && closeDetails()}>
         <SheetContent side="right" className="w-full gap-0 sm:max-w-md">

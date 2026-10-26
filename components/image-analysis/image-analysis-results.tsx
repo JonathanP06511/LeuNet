@@ -24,6 +24,9 @@ interface ImageAnalysisResultsProps {
   isLoading: boolean
   error?: string | null
   uploadedImage?: string | null
+  // Título (o nombre del archivo) y notas del análisis; se incluyen en el reporte PDF.
+  title?: string
+  notes?: string
 }
 
 export function ImageAnalysisResults({
@@ -31,6 +34,8 @@ export function ImageAnalysisResults({
   isLoading,
   error,
   uploadedImage,
+  title,
+  notes,
 }: ImageAnalysisResultsProps) {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
@@ -104,7 +109,7 @@ export function ImageAnalysisResults({
     setReportError(null)
 
     try {
-      await downloadAnalysisReport({ result, uploadedImage, analyst: getStoredUser() })
+      await downloadAnalysisReport({ result, uploadedImage, analyst: getStoredUser(), title, notes })
     } catch {
       setReportError("No se pudo generar el reporte. Intente nuevamente.")
     } finally {

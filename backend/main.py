@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query, Depends, File, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Depends, File, Form, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -123,6 +123,17 @@ def init_db():
         history_columns = [row[1] for row in conn.execute("PRAGMA table_info(prediction_history)").fetchall()]
         if "deleted_at" not in history_columns:
             conn.execute("ALTER TABLE prediction_history ADD COLUMN deleted_at TEXT")
+
+        # Eliminación suave hecha por un administrador: el usuario deja de ver el análisis
+        # (ni en su historial ni en "Eliminados"), pero el administrador puede consultarlo y restaurarlo.
+        if "admin_deleted_at" not in history_columns:
+            conn.execute("ALTER TABLE prediction_history ADD COLUMN admin_deleted_at TEXT")
+
+        # Título y notas opcionales que el usuario escribe al subir una imagen para analizar.
+        if "title" not in history_columns:
+            conn.execute("ALTER TABLE prediction_history ADD COLUMN title TEXT")
+        if "notes" not in history_columns:
+            conn.execute("ALTER TABLE prediction_history ADD COLUMN notes TEXT")
 
         # Imágenes de cada análisis (original y Grad-CAM) para poder consultarlas desde el historial.
         conn.execute("""
@@ -307,9 +318,9 @@ def require_role(*allowed_roles: str):
 # ============================================================================
 
 BASE_DIR = Path(__file__).parent
-MODEL_DIR = BASE_DIR / "models"
+MODEL_DIR = BASE_DIR.parent.parent / "Modelo"
 UPLOAD_ANALYSIS_MODEL_PATH = Path(
-    os.getenv("UPLOAD_ANALYSIS_MODEL_PATH", str(MODEL_DIR / "efficientnetb3_binary_best.keras"))
+    os.getenv("UPLOAD_ANALYSIS_MODEL_PATH", str(MODEL_DIR / "efficientnetb3_binary.keras"))
 )
 
 DIFFICULTY_CONFIG = {
@@ -324,7 +335,7 @@ DIFFICULTY_CONFIG = {
         ),
         "MODEL_PATH": os.getenv(
             "EASY_MODEL_PATH",
-            r"C:\Users\jonat\OneDrive\Escritorio\modelos\EN3_model.keras"
+            str(MODEL_DIR / "EN3_model.keras")
         ),
     },
     "hard": {
@@ -342,6 +353,9 @@ DIFFICULTY_CONFIG = {
         ),
     },
 }
+
+UPLOAD_TITLE_MAX_LENGTH = 60
+UPLOAD_NOTES_MAX_LENGTH = 500
 
 IMG_SIZE = (300, 300)
 UPLOAD_CLASS_NAMES = ["Benign", "Leukemia"]
@@ -716,7 +730,7 @@ def make_gradcam_heatmap(
 
     grad_model = tf.keras.models.Model(
         inputs=model.inputs,
-        outputs=[feature_layer.output, model.output],
+        outputs=[feature_layer.output, model.outputs[0]],
     )
 
     with tf.GradientTape() as tape:
@@ -1265,7 +1279,7 @@ def get_profile(current_user=Depends(get_current_user)):
                    COALESCE(SUM(CASE WHEN model_prediction IN ('Leukemia', 'ALL') THEN 1 ELSE 0 END), 0) AS leukemia_count,
                    COALESCE(SUM(CASE WHEN model_prediction IN ('Benign', 'Normal') THEN 1 ELSE 0 END), 0) AS benign_count
             FROM prediction_history
-            WHERE user_id = ? AND difficulty = 'uploaded' AND deleted_at IS NULL
+            WHERE user_id = ? AND difficulty = 'uploaded' AND deleted_at IS NULL AND admin_deleted_at IS NULL
             """,
             (current_user["id"],)
         ).fetchone()
@@ -1319,9 +1333,9 @@ def history(deleted: bool = Query(False), current_user=Depends(get_current_user)
             f"""
             SELECT id, image_id, image_path, user_answer, model_prediction, true_label,
                    user_correct, model_correct, model_confidence, probability_all,
-                   probability_normal, difficulty, created_at, deleted_at
+                   probability_normal, difficulty, created_at, deleted_at, title, notes
             FROM prediction_history
-            WHERE user_id = ? AND {filtro}
+            WHERE user_id = ? AND {filtro} AND admin_deleted_at IS NULL
             ORDER BY id DESC
             LIMIT 100
             """,
@@ -1334,11 +1348,12 @@ def history(deleted: bool = Query(False), current_user=Depends(get_current_user)
 def set_history_deleted(history_id: int, current_user, deleted: bool):
     with get_db_connection() as conn:
         row = conn.execute(
-            "SELECT user_id FROM prediction_history WHERE id = ?",
+            "SELECT user_id, admin_deleted_at FROM prediction_history WHERE id = ?",
             (history_id,)
         ).fetchone()
-        # Cada usuario solo puede eliminar o restaurar sus propios análisis.
-        if not row or row["user_id"] != current_user["id"]:
+        # Cada usuario solo puede eliminar o restaurar sus propios análisis,
+        # y no los que un administrador eliminó.
+        if not row or row["user_id"] != current_user["id"] or row["admin_deleted_at"]:
             raise HTTPException(status_code=404, detail="Análisis no encontrado")
 
         conn.execute(
@@ -1365,7 +1380,7 @@ def history_images(history_id: int, current_user=Depends(get_current_user)):
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT h.user_id, h.model_prediction, i.original_image, i.gradcam_heatmap,
+            SELECT h.user_id, h.model_prediction, h.admin_deleted_at, i.original_image, i.gradcam_heatmap,
                    i.gradcam_image, i.gradcam_focus_image
             FROM prediction_history h
             LEFT JOIN analysis_images i ON i.history_id = h.id
@@ -1374,7 +1389,8 @@ def history_images(history_id: int, current_user=Depends(get_current_user)):
             (history_id,)
         ).fetchone()
 
-    if not row or (row["user_id"] != current_user["id"] and current_user["role"] != "ADMIN"):
+    is_admin = current_user["role"] == "ADMIN"
+    if not row or (not is_admin and (row["user_id"] != current_user["id"] or row["admin_deleted_at"])):
         raise HTTPException(status_code=404, detail="Análisis no encontrado")
 
     if not row["original_image"]:
@@ -1404,7 +1420,8 @@ def admin_users(current_user=Depends(require_role("ADMIN"))):
                    COALESCE(SUM(CASE WHEN h.model_prediction IN ('Benign', 'Normal') THEN 1 ELSE 0 END), 0) AS benign_count,
                    AVG(h.model_confidence) AS avg_confidence
             FROM users u
-            LEFT JOIN prediction_history h ON h.user_id = u.id AND h.difficulty = 'uploaded'
+            LEFT JOIN prediction_history h
+                   ON h.user_id = u.id AND h.difficulty = 'uploaded' AND h.admin_deleted_at IS NULL
             GROUP BY u.id
             ORDER BY u.id ASC
             """
@@ -1481,7 +1498,7 @@ def admin_activity(current_user=Depends(require_role("ADMIN"))):
     # Fechas de todos los análisis de imágenes; el frontend las agrupa por día y hora en la zona horaria local.
     with get_db_connection() as conn:
         rows = conn.execute(
-            "SELECT created_at, user_id FROM prediction_history WHERE difficulty = 'uploaded'"
+            "SELECT created_at, user_id FROM prediction_history WHERE difficulty = 'uploaded' AND admin_deleted_at IS NULL"
         ).fetchall()
 
     return {"items": [dict(row) for row in rows]}
@@ -1494,7 +1511,7 @@ def admin_history(current_user=Depends(require_role("ADMIN"))):
             """
             SELECT h.id, h.image_id, h.image_path, h.user_answer, h.model_prediction, h.true_label,
                    h.user_correct, h.model_correct, h.model_confidence, h.probability_all,
-                   h.probability_normal, h.difficulty, h.created_at, h.deleted_at,
+                   h.probability_normal, h.difficulty, h.created_at, h.deleted_at, h.admin_deleted_at, h.title, h.notes,
                    u.id AS user_id, u.name AS user_name, u.email AS user_email
             FROM prediction_history h
             INNER JOIN users u ON u.id = h.user_id
@@ -1506,12 +1523,50 @@ def admin_history(current_user=Depends(require_role("ADMIN"))):
     return [dict(row) for row in rows]
 
 
+def set_history_admin_deleted(history_id: int, deleted: bool):
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM prediction_history WHERE id = ?",
+            (history_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Análisis no encontrado")
+
+        # Es independiente de deleted_at: al restaurar, el análisis vuelve al estado que tenía el usuario.
+        conn.execute(
+            "UPDATE prediction_history SET admin_deleted_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat() if deleted else None, history_id)
+        )
+        conn.commit()
+
+    return {"id": history_id, "admin_deleted": deleted}
+
+
+@app.delete("/admin/history/{history_id}")
+def admin_delete_history_item(history_id: int, current_user=Depends(require_role("ADMIN"))):
+    return set_history_admin_deleted(history_id, True)
+
+
+@app.post("/admin/history/{history_id}/restore")
+def admin_restore_history_item(history_id: int, current_user=Depends(require_role("ADMIN"))):
+    return set_history_admin_deleted(history_id, False)
+
+
 # ============================================================================
 # IMAGE ANALYSIS ENDPOINT
 # ============================================================================
 
 @app.post("/image-analysis/predict")
-async def predict_uploaded_image(file: UploadFile = File(...), current_user=Depends(get_current_user)):
+async def predict_uploaded_image(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    notes: str = Form(""),
+    current_user=Depends(get_current_user),
+):
+    # Título y notas son opcionales; se recortan por si alguien llama a la API directamente.
+    title = title.strip()[:UPLOAD_TITLE_MAX_LENGTH] or None
+    notes = notes.strip()[:UPLOAD_NOTES_MAX_LENGTH] or None
+
     allowed_types = {"image/png", "image/jpeg", "image/jpg"}
 
     if not file.content_type or file.content_type.lower() not in allowed_types:
@@ -1599,8 +1654,8 @@ async def predict_uploaded_image(file: UploadFile = File(...), current_user=Depe
                 INSERT INTO prediction_history (
                     user_id, image_id, image_path, user_answer, model_prediction, true_label,
                     user_correct, model_correct, model_confidence, probability_all,
-                    probability_normal, difficulty, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    probability_normal, difficulty, created_at, title, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     current_user["id"],
@@ -1616,6 +1671,8 @@ async def predict_uploaded_image(file: UploadFile = File(...), current_user=Depe
                     result["probabilities"]["Benign"],
                     "uploaded",
                     datetime.now(timezone.utc).isoformat(),
+                    title,
+                    notes,
                 ),
             )
             original_image = f"data:{file.content_type.lower()};base64,{base64.b64encode(image_bytes).decode('utf-8')}"

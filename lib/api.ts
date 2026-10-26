@@ -91,6 +91,11 @@ export interface HistoryItem {
   created_at: string;
   // Fecha en que el usuario lo eliminó de su historial (eliminación suave); null si está activo.
   deleted_at?: string | null;
+  // Fecha en que un administrador lo eliminó (el usuario ya no lo ve); null si no está eliminado por un admin.
+  admin_deleted_at?: string | null;
+  // Título y notas opcionales escritos al subir la imagen.
+  title?: string | null;
+  notes?: string | null;
 }
 
 export interface HistoryImages {
@@ -445,13 +450,44 @@ export async function getAdminHistory(): Promise<AdminHistoryItem[]> {
   return response.json();
 }
 
+export async function adminDeleteHistoryItem(historyId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/history/${historyId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo eliminar el análisis'));
+  }
+}
+
+export async function adminRestoreHistoryItem(historyId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/history/${historyId}/restore`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo restaurar el análisis'));
+  }
+}
+
 // =====================
 // IMAGE ANALYSIS API
 // =====================
 
-export async function analyzeUploadedImage(file: File): Promise<ImageAnalysisResult> {
+export const ANALYSIS_TITLE_MAX_LENGTH = 60;
+export const ANALYSIS_NOTES_MAX_LENGTH = 500;
+
+export async function analyzeUploadedImage(
+  file: File,
+  title = '',
+  notes = '',
+): Promise<ImageAnalysisResult> {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('title', title);
+  formData.append('notes', notes);
 
   const response = await fetch(`${API_BASE_URL}/image-analysis/predict`, {
     method: 'POST',

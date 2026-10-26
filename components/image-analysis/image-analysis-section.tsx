@@ -4,6 +4,7 @@ import { useState } from "react"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ImageUploader } from "./image-uploader"
+import { AnalysisDetails } from "./analysis-details"
 import { PredictionButton } from "./prediction-button"
 import { ImageAnalysisResults } from "./image-analysis-results"
 import { MedicalDisclaimer } from "./medical-disclaimer"
@@ -19,12 +20,16 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<ImageAnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [title, setTitle] = useState("")
+  const [notes, setNotes] = useState("")
 
   const handleImageUpload = (file: File, imageUrl: string) => {
     setUploadedImage(imageUrl)
     setSelectedFile(file)
     setResult(null)
     setError(null)
+    setTitle("")
+    setNotes("")
   }
 
   const handleImageRemove = () => {
@@ -35,6 +40,8 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
     setSelectedFile(null)
     setResult(null)
     setError(null)
+    setTitle("")
+    setNotes("")
   }
 
   const handleRunPrediction = async () => {
@@ -45,7 +52,7 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
     setError(null)
 
     try {
-      const data = await analyzeUploadedImage(selectedFile)
+      const data = await analyzeUploadedImage(selectedFile, title.trim(), notes.trim())
       setResult(data)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error inesperado durante la predicción."
@@ -78,6 +85,17 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
           uploadedImage={uploadedImage}
         />
 
+        {selectedFile && (
+          <AnalysisDetails
+            title={title}
+            notes={notes}
+            onTitleChange={setTitle}
+            onNotesChange={setNotes}
+            fileName={selectedFile.name}
+            disabled={isLoading}
+          />
+        )}
+
         <PredictionButton onRunPrediction={handleRunPrediction} isLoading={isLoading} disabled={!selectedFile} />
 
         {(result || isLoading || error) && (
@@ -86,6 +104,8 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
             isLoading={isLoading}
             error={error}
             uploadedImage={uploadedImage}
+            title={title.trim() || selectedFile?.name}
+            notes={notes.trim()}
           />
         )}
 

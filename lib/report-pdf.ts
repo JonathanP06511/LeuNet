@@ -20,6 +20,8 @@ interface ReportOptions {
   result: ImageAnalysisResult
   uploadedImage?: string | null
   analyst: User | null
+  title?: string | null
+  notes?: string | null
 }
 
 // Carga cualquier src (blob:, data:, url) y la dibuja completa con la proporción indicada.
@@ -48,7 +50,7 @@ function pad(value: number) {
   return String(value).padStart(2, "0")
 }
 
-export async function downloadAnalysisReport({ result, uploadedImage, analyst }: ReportOptions) {
+export async function downloadAnalysisReport({ result, uploadedImage, analyst, title, notes }: ReportOptions) {
   // Se carga la versión de navegador de jsPDF solo al generar el reporte;
   // la versión de Node rompe el renderizado del servidor en Next.js.
   const { jsPDF } = (await import("jspdf/dist/jspdf.es.min.js")) as { jsPDF: typeof JsPDF }
@@ -105,6 +107,7 @@ export async function downloadAnalysisReport({ result, uploadedImage, analyst }:
     ["Fecha del reporte", dateText],
     ["Hora del reporte", timeText],
   ]
+  if (title) infoRows.push(["Título", title])
 
   doc.setDrawColor(...BORDER)
   doc.roundedRect(MARGIN, y - 5, CONTENT_WIDTH, infoRows.length * 6 + 4, 2, 2, "S")
@@ -119,6 +122,13 @@ export async function downloadAnalysisReport({ result, uploadedImage, analyst }:
     y += 6
   })
   y += 6
+
+  // ===== Notas =====
+  if (notes) {
+    writeHeading("Notas del análisis")
+    writeParagraph(notes, 10, TEXT)
+    y += 6
+  }
 
   // ===== Resultado =====
   const isLeukemia = result.predicted_class === "Leukemia"
