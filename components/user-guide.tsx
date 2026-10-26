@@ -247,8 +247,8 @@ export function UserGuide({ onBack }: { onBack?: () => void }) {
       </GuideSection>
 
       <p className="rounded-lg border border-warning/50 bg-warning/5 p-4 text-sm font-medium text-foreground">
-        LeuNet no reemplaza el diagnóstico médico profesional. Los resultados deben ser revisados por un profesional de
-        salud capacitado.
+        LeuNet es una herramienta de apoyo. Los resultados deben ser revisados y confirmados por un profesional de salud
+        capacitado.
       </p>
     </div>
   );

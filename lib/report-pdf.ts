@@ -13,7 +13,7 @@ const MUTED: [number, number, number] = [100, 110, 125]
 const BORDER: [number, number, number] = [220, 225, 232]
 
 const DISCLAIMER_TEXT =
-  "Esta herramienta está destinada exclusivamente a fines de investigación y apoyo clínico, y no reemplaza el juicio, la valoración ni el diagnóstico médico profesional. Los resultados obtenidos deben ser revisados por un profesional de salud capacitado y complementados con la valoración clínica, el historial médico del paciente y las pruebas necesarias."
+  "Esta herramienta está destinada exclusivamente a fines de investigación y apoyo clínico, y no reemplaza el juicio, la valoración ni el diagnóstico médico profesional. Los resultados obtenidos deben ser complementados con la valoración clínica, el historial médico del paciente y las pruebas necesarias."
 
 interface ReportOptions {
   result: ImageAnalysisResult

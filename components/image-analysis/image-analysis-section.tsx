@@ -67,9 +67,6 @@ export function ImageAnalysisSection({ onBack }: ImageAnalysisSectionProps) {
           )}
           <div>
             <h2 className="text-xl font-semibold">Análisis de imágenes</h2>
-            <p className="text-sm text-muted-foreground">
-              Sube una imagen microscópica y obtén una predicción con Grad-CAM.
-            </p>
           </div>
         </div>
       </div>

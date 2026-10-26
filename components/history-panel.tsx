@@ -136,9 +136,15 @@ interface HistoryResultsTableProps<T extends HistoryItem> {
   items: T[];
   // Usuario que realizó cada análisis: se muestra en la columna "Usuario" y en el reporte PDF.
   getUser: (item: T) => User | null;
+  // En el historial personal todos los análisis son del mismo usuario, así que la columna sobra.
+  showUserColumn?: boolean;
 }
 
-export function HistoryResultsTable<T extends HistoryItem>({ items, getUser }: HistoryResultsTableProps<T>) {
+export function HistoryResultsTable<T extends HistoryItem>({
+  items,
+  getUser,
+  showUserColumn = true,
+}: HistoryResultsTableProps<T>) {
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -200,7 +206,7 @@ export function HistoryResultsTable<T extends HistoryItem>({ items, getUser }: H
         <thead className="border-b text-left text-muted-foreground">
           <tr>
             <th className="py-3 pr-4">Fecha</th>
-            <th className="py-3 pr-4">Usuario</th>
+            {showUserColumn && <th className="py-3 pr-4">Usuario</th>}
             <th className="py-3 pr-4">Predicción IA</th>
             <th className="py-3 pr-4">Confianza</th>
             <th className="py-3 pr-4">Resultado</th>
@@ -214,9 +220,11 @@ export function HistoryResultsTable<T extends HistoryItem>({ items, getUser }: H
                 {new Date(item.created_at).toLocaleString()}
               </td>
 
-              <td className="py-3 pr-4">
-                {getUser(item)?.name}
-              </td>
+              {showUserColumn && (
+                <td className="py-3 pr-4">
+                  {getUser(item)?.name}
+                </td>
+              )}
 
               <td className="py-3 pr-4 font-medium">
                 {formatLabel(item.model_prediction)}
@@ -320,7 +328,7 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
           ) : error ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : (
-            <HistoryResultsTable items={items} getUser={() => currentUser} />
+            <HistoryResultsTable items={items} getUser={() => currentUser} showUserColumn={false} />
           )}
         </CardContent>
       </Card>
