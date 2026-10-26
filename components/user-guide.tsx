@@ -158,7 +158,7 @@ export function UserGuide({ onBack }: { onBack?: () => void }) {
       <GuideSection
         icon={ImageIcon}
         title="Qué imagen subir"
-        description="El modelo fue entrenado con el conjunto de datos público Blood Cells Cancer (ALL), compuesto por imágenes de frotis sanguíneo con tinción May-Grünwald-Giemsa (MGG)."
+        description="El modelo fue entrenado con el conjunto de datos público Frotis sanguíneo ALL y HEM, compuesto por imágenes de frotis sanguíneo con tinción May-Grünwald-Giemsa (MGG)."
       >
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-3">
@@ -203,8 +203,7 @@ export function UserGuide({ onBack }: { onBack?: () => void }) {
 
           <p>
             <span className="font-medium text-foreground">Nivel de confianza:</span> es la probabilidad que el modelo
-            asigna al resultado elegido. El modelo elige la clase con mayor probabilidad, por lo que la confianza siempre
-            es de al menos 50 %. Una confianza alta no garantiza que el resultado sea correcto.
+            asigna al resultado elegido.
           </p>
 
           <div>
@@ -229,9 +228,7 @@ export function UserGuide({ onBack }: { onBack?: () => void }) {
       <GuideSection icon={AlertTriangle} title="Limitaciones">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>LeuNet es un prototipo académico de apoyo y puede equivocarse, con falsos positivos o falsos negativos.</li>
-          <li>Clasifica la imagen completa: no cuenta células ni determina el subtipo de leucemia.</li>
           <li>La calidad del resultado depende de la calidad de la imagen y de que la tinción sea similar a la del entrenamiento.</li>
-          <li>La validación previa de imágenes es un filtro básico y no reemplaza la revisión de un especialista.</li>
         </ul>
       </GuideSection>
 
