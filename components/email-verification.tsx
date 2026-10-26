@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,7 @@ import { resendVerificationCode, verifyEmail, type User } from '@/lib/api';
 
 const CODE_LENGTH = 6;
 const RESEND_SECONDS = 60;
+const SUCCESS_DELAY_MS = 1800;
 
 interface EmailVerificationProps {
   email: string;
@@ -25,12 +27,24 @@ export function EmailVerification({ email, onVerified, onBack }: EmailVerificati
   const [cooldown, setCooldown] = useState(RESEND_SECONDS);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Usuario ya verificado: se muestra la confirmación un instante antes de entrar a la aplicación.
+  const [verifiedUser, setVerifiedUser] = useState<User | null>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
+
+  // El padre pasa una función nueva en cada render; se guarda en una ref para no reiniciar el temporizador.
+  const onVerifiedRef = useRef(onVerified);
+  onVerifiedRef.current = onVerified;
+
+  useEffect(() => {
+    if (!verifiedUser) return;
+    const timer = setTimeout(() => onVerifiedRef.current(verifiedUser), SUCCESS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [verifiedUser]);
 
   const submit = async (value: string) => {
     if (value.length !== CODE_LENGTH || loading) return;
@@ -40,7 +54,7 @@ export function EmailVerification({ email, onVerified, onBack }: EmailVerificati
 
     try {
       const auth = await verifyEmail(email, value);
-      onVerified(auth.user);
+      setVerifiedUser(auth.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo verificar el código');
       setCode('');
@@ -65,6 +79,21 @@ export function EmailVerification({ email, onVerified, onBack }: EmailVerificati
       setResending(false);
     }
   };
+
+  if (verifiedUser) {
+    return (
+      <CardContent className="flex flex-col items-center gap-3 py-10 text-center" role="status">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-500/15">
+          <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+        </div>
+        <h2 className="text-lg font-semibold">¡Cuenta verificada!</h2>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-3.5 w-3.5" />
+          Entrando a LeuNet…
+        </p>
+      </CardContent>
+    );
+  }
 
   return (
     <>

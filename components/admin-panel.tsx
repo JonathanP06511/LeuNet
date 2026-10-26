@@ -146,7 +146,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
               </CardHeader>
 
               <CardContent className="text-3xl font-bold">
-                {history.filter((item) => !item.admin_deleted_at).length}
+                {history.filter((item) => !item.deleted_at && !item.admin_deleted_at).length}
               </CardContent>
             </Card>
           </div>

@@ -1421,7 +1421,8 @@ def admin_users(current_user=Depends(require_role("ADMIN"))):
                    AVG(h.model_confidence) AS avg_confidence
             FROM users u
             LEFT JOIN prediction_history h
-                   ON h.user_id = u.id AND h.difficulty = 'uploaded' AND h.admin_deleted_at IS NULL
+                   ON h.user_id = u.id AND h.difficulty = 'uploaded'
+                  AND h.deleted_at IS NULL AND h.admin_deleted_at IS NULL
             GROUP BY u.id
             ORDER BY u.id ASC
             """
