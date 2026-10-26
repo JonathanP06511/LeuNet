@@ -89,6 +89,8 @@ export interface HistoryItem {
   probability_normal: number;
   difficulty: Difficulty | 'uploaded' | string;
   created_at: string;
+  // Fecha en que el usuario lo eliminó de su historial (eliminación suave); null si está activo.
+  deleted_at?: string | null;
 }
 
 export interface HistoryImages {
@@ -277,8 +279,9 @@ export async function getCurrentUser(): Promise<User> {
   return user;
 }
 
-export async function getHistory(): Promise<HistoryItem[]> {
-  const response = await fetch(`${API_BASE_URL}/history`, {
+// deleted = true devuelve los análisis que el usuario eliminó (papelera).
+export async function getHistory(deleted = false): Promise<HistoryItem[]> {
+  const response = await fetch(`${API_BASE_URL}/history${deleted ? '?deleted=true' : ''}`, {
     headers: authHeaders(),
   });
 
@@ -287,6 +290,28 @@ export async function getHistory(): Promise<HistoryItem[]> {
   }
 
   return response.json();
+}
+
+export async function deleteHistoryItem(historyId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/history/${historyId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo eliminar el análisis'));
+  }
+}
+
+export async function restoreHistoryItem(historyId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/history/${historyId}/restore`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'No se pudo restaurar el análisis'));
+  }
 }
 
 export async function getHistoryImages(historyId: number): Promise<HistoryImages> {

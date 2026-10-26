@@ -154,6 +154,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             <CardContent>
               <HistoryResultsTable
                 items={history}
+                showDeletedLabel
                 getUser={(item) => ({
                   id: item.user_id,
                   name: item.user_name,

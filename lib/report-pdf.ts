@@ -1,5 +1,6 @@
 import type { jsPDF as JsPDF } from "jspdf"
 import type { ImageAnalysisResult, User } from "@/lib/api"
+import { loadImageAspectRatio } from "@/lib/image-aspect"
 
 const PAGE_WIDTH = 210
 const PAGE_HEIGHT = 297
@@ -21,23 +22,21 @@ interface ReportOptions {
   analyst: User | null
 }
 
-// Carga cualquier src (blob:, data:, url) y lo recorta a un cuadrado, igual que object-cover en la UI.
-function toSquareJpeg(src: string, size = 600): Promise<string> {
+// Carga cualquier src (blob:, data:, url) y la dibuja completa con la proporción indicada.
+// Las imágenes de Grad-CAM (300x300) vuelven así a la forma de la foto original, sin recortes.
+function toJpeg(src: string, ratio: number, width = 600): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = "anonymous"
     img.onload = () => {
-      const side = Math.min(img.naturalWidth, img.naturalHeight)
-      const sx = (img.naturalWidth - side) / 2
-      const sy = (img.naturalHeight - side) / 2
       const canvas = document.createElement("canvas")
-      canvas.width = size
-      canvas.height = size
+      canvas.width = width
+      canvas.height = Math.round(width / ratio)
       const ctx = canvas.getContext("2d")
       if (!ctx) return reject(new Error("No se pudo procesar la imagen"))
       ctx.fillStyle = "#ffffff"
-      ctx.fillRect(0, 0, size, size)
-      ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size)
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       resolve(canvas.toDataURL("image/jpeg", 0.92))
     }
     img.onerror = () => reject(new Error("No se pudo cargar la imagen"))
@@ -185,9 +184,12 @@ export async function downloadAnalysisReport({ result, uploadedImage, analyst }:
         : { title: "Grad-CAM sobre la imagen", src: `data:image/png;base64,${result.gradcam_image}` }
     )
 
+    // Las tres imágenes usan la proporción de la foto original para que coincidan entre sí.
+    const ratio = uploadedImage ? await loadImageAspectRatio(uploadedImage).catch(() => 1) : 1
     const gap = 5
-    const imageSize = (CONTENT_WIDTH - gap * 2) / 3
-    ensureSpace(20 + imageSize + 8)
+    const imageWidth = (CONTENT_WIDTH - gap * 2) / 3
+    const imageHeight = imageWidth / ratio
+    ensureSpace(20 + imageHeight + 8)
 
     doc.setDrawColor(...BORDER)
     doc.line(MARGIN, y - 4, MARGIN + CONTENT_WIDTH, y - 4)
@@ -196,22 +198,22 @@ export async function downloadAnalysisReport({ result, uploadedImage, analyst }:
     writeParagraph("El mapa de calor resalta las regiones de la imagen que tuvieron influencia en la predicción del modelo.", 9)
     y += 5
 
-    const images = await Promise.all(panels.map((panel) => toSquareJpeg(panel.src).catch(() => null)))
+    const images = await Promise.all(panels.map((panel) => toJpeg(panel.src, ratio).catch(() => null)))
 
     panels.forEach((panel, index) => {
-      const x = MARGIN + index * (imageSize + gap)
+      const x = MARGIN + index * (imageWidth + gap)
       doc.setFont("helvetica", "bold")
       doc.setFontSize(9)
       doc.setTextColor(...TEXT)
       doc.text(panel.title, x, y)
       const data = images[index]
       if (data) {
-        doc.addImage(data, "JPEG", x, y + 2, imageSize, imageSize)
+        doc.addImage(data, "JPEG", x, y + 2, imageWidth, imageHeight)
       }
       doc.setDrawColor(...BORDER)
-      doc.roundedRect(x, y + 2, imageSize, imageSize, 1.5, 1.5, "S")
+      doc.roundedRect(x, y + 2, imageWidth, imageHeight, 1.5, 1.5, "S")
     })
-    y += imageSize + 10
+    y += imageHeight + 10
 
     if (focusImage) {
       const note =

@@ -16,6 +16,7 @@ import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getStoredUser, type ImageAnalysisResult } from "@/lib/api"
 import { downloadAnalysisReport } from "@/lib/report-pdf"
+import { useImageAspectRatio } from "@/lib/image-aspect"
 import { MedicalDisclaimer } from "./medical-disclaimer"
 
 interface ImageAnalysisResultsProps {
@@ -33,6 +34,8 @@ export function ImageAnalysisResults({
 }: ImageAnalysisResultsProps) {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
+  // Las tres imágenes se muestran con la proporción de la foto original para que coincidan.
+  const imageRatio = useImageAspectRatio(uploadedImage)
 
   if (isLoading) {
     return (
@@ -224,7 +227,8 @@ export function ImageAnalysisResults({
                   <img
                     src={uploadedImage}
                     alt="Imagen analizada"
-                    className="aspect-square w-full rounded-lg border bg-background object-cover"
+                    className="w-full rounded-lg border bg-background object-fill"
+                    style={{ aspectRatio: imageRatio ?? 1 }}
                   />
                 </div>
               )}
@@ -238,7 +242,8 @@ export function ImageAnalysisResults({
                   <img
                     src={`data:image/png;base64,${result.gradcam_heatmap}`}
                     alt="Mapa de calor Grad-CAM"
-                    className="aspect-square w-full rounded-lg border bg-background object-cover"
+                    className="w-full rounded-lg border bg-background object-fill"
+                    style={{ aspectRatio: imageRatio ?? 1 }}
                   />
                 </div>
               )}
@@ -253,7 +258,8 @@ export function ImageAnalysisResults({
                   <img
                     src={`data:image/png;base64,${focusImage}`}
                     alt="Región de mayor influencia"
-                    className="aspect-square w-full rounded-lg border bg-background object-cover"
+                    className="w-full rounded-lg border bg-background object-fill"
+                    style={{ aspectRatio: imageRatio ?? 1 }}
                   />
                 </div>
               ) : (
@@ -265,7 +271,8 @@ export function ImageAnalysisResults({
                   <img
                     src={`data:image/png;base64,${result.gradcam_image}`}
                     alt="Grad-CAM sobre la imagen"
-                    className="aspect-square w-full rounded-lg border bg-background object-cover"
+                    className="w-full rounded-lg border bg-background object-fill"
+                    style={{ aspectRatio: imageRatio ?? 1 }}
                   />
                 </div>
               )}

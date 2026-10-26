@@ -119,6 +119,11 @@ def init_db():
             )
         """)
 
+        # Eliminación suave: el usuario oculta un análisis de su historial sin borrarlo.
+        history_columns = [row[1] for row in conn.execute("PRAGMA table_info(prediction_history)").fetchall()]
+        if "deleted_at" not in history_columns:
+            conn.execute("ALTER TABLE prediction_history ADD COLUMN deleted_at TEXT")
+
         # Imágenes de cada análisis (original y Grad-CAM) para poder consultarlas desde el historial.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS analysis_images (
@@ -867,6 +872,10 @@ def generar_marca_zona_principal(image_bytes: bytes, heatmap: np.ndarray) -> str
     """
 
     original = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    # La imagen se muestra con la proporción de la foto original; el círculo se dibuja
+    # comprimido en horizontal (o vertical) para que se vea redondo al mostrarla así.
+    escala_x = min(1.0, original.height / original.width)
+    escala_y = min(1.0, original.width / original.height)
     original = original.resize(IMG_SIZE, Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(original)
 
@@ -906,8 +915,9 @@ def generar_marca_zona_principal(image_bytes: bytes, heatmap: np.ndarray) -> str
         y, x = np.unravel_index(np.argmax(interior), interior.shape)
         radio = 24
 
-    draw.ellipse([(x - radio, y - radio), (x + radio, y + radio)], outline=(255, 0, 0), width=4)
-    draw.ellipse([(x - 4, y - 4), (x + 4, y + 4)], fill=(255, 0, 0))
+    rx, ry = radio * escala_x, radio * escala_y
+    draw.ellipse([(x - rx, y - ry), (x + rx, y + ry)], outline=(255, 0, 0), width=4)
+    draw.ellipse([(x - 4 * escala_x, y - 4 * escala_y), (x + 4 * escala_x, y + 4 * escala_y)], fill=(255, 0, 0))
 
     return pil_image_to_base64(original)
 
@@ -1255,7 +1265,7 @@ def get_profile(current_user=Depends(get_current_user)):
                    COALESCE(SUM(CASE WHEN model_prediction IN ('Leukemia', 'ALL') THEN 1 ELSE 0 END), 0) AS leukemia_count,
                    COALESCE(SUM(CASE WHEN model_prediction IN ('Benign', 'Normal') THEN 1 ELSE 0 END), 0) AS benign_count
             FROM prediction_history
-            WHERE user_id = ? AND difficulty = 'uploaded'
+            WHERE user_id = ? AND difficulty = 'uploaded' AND deleted_at IS NULL
             """,
             (current_user["id"],)
         ).fetchone()
@@ -1301,15 +1311,17 @@ def change_password(request: PasswordChangeRequest, current_user=Depends(get_cur
 
 
 @app.get("/history")
-def history(current_user=Depends(get_current_user)):
+def history(deleted: bool = Query(False), current_user=Depends(get_current_user)):
+    # deleted=false: historial normal. deleted=true: análisis que el usuario eliminó (papelera).
+    filtro = "deleted_at IS NOT NULL" if deleted else "deleted_at IS NULL"
     with get_db_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, image_id, image_path, user_answer, model_prediction, true_label,
                    user_correct, model_correct, model_confidence, probability_all,
-                   probability_normal, difficulty, created_at
+                   probability_normal, difficulty, created_at, deleted_at
             FROM prediction_history
-            WHERE user_id = ?
+            WHERE user_id = ? AND {filtro}
             ORDER BY id DESC
             LIMIT 100
             """,
@@ -1317,6 +1329,35 @@ def history(current_user=Depends(get_current_user)):
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def set_history_deleted(history_id: int, current_user, deleted: bool):
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM prediction_history WHERE id = ?",
+            (history_id,)
+        ).fetchone()
+        # Cada usuario solo puede eliminar o restaurar sus propios análisis.
+        if not row or row["user_id"] != current_user["id"]:
+            raise HTTPException(status_code=404, detail="Análisis no encontrado")
+
+        conn.execute(
+            "UPDATE prediction_history SET deleted_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat() if deleted else None, history_id)
+        )
+        conn.commit()
+
+    return {"id": history_id, "deleted": deleted}
+
+
+@app.delete("/history/{history_id}")
+def delete_history_item(history_id: int, current_user=Depends(get_current_user)):
+    return set_history_deleted(history_id, current_user, True)
+
+
+@app.post("/history/{history_id}/restore")
+def restore_history_item(history_id: int, current_user=Depends(get_current_user)):
+    return set_history_deleted(history_id, current_user, False)
 
 
 @app.get("/history/{history_id}/images")
@@ -1453,7 +1494,7 @@ def admin_history(current_user=Depends(require_role("ADMIN"))):
             """
             SELECT h.id, h.image_id, h.image_path, h.user_answer, h.model_prediction, h.true_label,
                    h.user_correct, h.model_correct, h.model_confidence, h.probability_all,
-                   h.probability_normal, h.difficulty, h.created_at,
+                   h.probability_normal, h.difficulty, h.created_at, h.deleted_at,
                    u.id AS user_id, u.name AS user_name, u.email AS user_email
             FROM prediction_history h
             INNER JOIN users u ON u.id = h.user_id

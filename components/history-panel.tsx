@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, History, Target } from 'lucide-react';
+import { ArrowLeft, History, RotateCcw, Target, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -19,14 +19,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  deleteHistoryItem,
   getHistory,
   getHistoryImages,
+  restoreHistoryItem,
   getStoredUser,
   type HistoryImages,
   type HistoryItem,
   type User,
 } from '@/lib/api';
 import { downloadAnalysisReport } from '@/lib/report-pdf';
+import { useImageAspectRatio } from '@/lib/image-aspect';
 import { PAGE_SIZE, TablePagination } from '@/components/table-pagination';
 
 interface HistoryPanelProps {
@@ -44,6 +47,7 @@ function AnalysisImagesDialog({ item, onClose }: { item: HistoryItem | null; onC
   const [images, setImages] = useState<HistoryImages | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const imageRatio = useImageAspectRatio(images?.original_image);
 
   useEffect(() => {
     if (!item) return;
@@ -111,7 +115,10 @@ function AnalysisImagesDialog({ item, onClose }: { item: HistoryItem | null; onC
         ) : error ? (
           <p className="py-4 text-sm text-destructive">{error}</p>
         ) : (
-          <div className="mx-auto my-auto grid w-full max-w-[calc((100dvh-14rem)*3)] gap-6 md:grid-cols-3">
+          <div
+            className="mx-auto my-auto grid w-full gap-6 md:grid-cols-3"
+            style={{ maxWidth: `calc((100dvh - 14rem) * 3 * ${imageRatio ?? 1})` }}
+          >
             {panels.map((panel) => (
               <div key={panel.title} className="space-y-2">
                 <p className="flex items-center gap-1 text-sm font-medium text-foreground">
@@ -121,7 +128,8 @@ function AnalysisImagesDialog({ item, onClose }: { item: HistoryItem | null; onC
                 <img
                   src={panel.src}
                   alt={panel.title}
-                  className="aspect-square w-full rounded-lg border bg-background object-cover"
+                  className="w-full rounded-lg border bg-background object-fill"
+                  style={{ aspectRatio: imageRatio ?? 1 }}
                 />
               </div>
             ))}
@@ -138,14 +146,27 @@ interface HistoryResultsTableProps<T extends HistoryItem> {
   getUser: (item: T) => User | null;
   // En el historial personal todos los análisis son del mismo usuario, así que la columna sobra.
   showUserColumn?: boolean;
+  // Acción por fila del historial personal: eliminar (con confirmación) o restaurar.
+  rowAction?: 'delete' | 'restore';
+  onRowAction?: (item: T) => Promise<void>;
+  // Historial general: marca los análisis que el usuario eliminó de su historial.
+  showDeletedLabel?: boolean;
+  emptyMessage?: string;
 }
 
 export function HistoryResultsTable<T extends HistoryItem>({
   items,
   getUser,
   showUserColumn = true,
+  rowAction,
+  onRowAction,
+  showDeletedLabel = false,
+  emptyMessage = 'Todavía no existen resultados guardados.',
 }: HistoryResultsTableProps<T>) {
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [actingId, setActingId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -189,18 +210,29 @@ export function HistoryResultsTable<T extends HistoryItem>({
     }
   };
 
+  const runRowAction = async (item: T) => {
+    if (!onRowAction) return;
+    setActingId(item.id);
+    setActionError(null);
+
+    try {
+      await onRowAction(item);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo completar la acción');
+    } finally {
+      setActingId(null);
+      setConfirmingId(null);
+    }
+  };
+
   if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Todavía no existen resultados guardados.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
   }
 
   return (
     <div className="overflow-x-auto">
-      {downloadError && (
-        <p className="mb-3 text-sm text-destructive">{downloadError}</p>
+      {(downloadError || actionError) && (
+        <p className="mb-3 text-sm text-destructive">{downloadError || actionError}</p>
       )}
       <table className="w-full min-w-[620px] text-sm">
         <thead className="border-b text-left text-muted-foreground">
@@ -210,6 +242,11 @@ export function HistoryResultsTable<T extends HistoryItem>({
             <th className="py-3 pr-4">Predicción IA</th>
             <th className="py-3 pr-4">Confianza</th>
             <th className="py-3 pr-4">Resultado</th>
+            {rowAction && (
+              <th className="w-12 py-3">
+                <span className="sr-only">Acciones</span>
+              </th>
+            )}
           </tr>
         </thead>
 
@@ -235,29 +272,91 @@ export function HistoryResultsTable<T extends HistoryItem>({
               </td>
 
               <td className="py-3 pr-4">
-                {item.difficulty === 'uploaded' ? (
-                  <div className="flex items-center gap-4">
+                {confirmingId === item.id ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-foreground">¿Eliminar este análisis?</span>
                     <button
                       type="button"
-                      className="font-medium text-primary underline-offset-4 hover:underline"
-                      onClick={() => setSelectedItem(item)}
+                      className="inline-flex items-center gap-1 font-medium text-destructive underline-offset-4 hover:underline disabled:opacity-60"
+                      onClick={() => runRowAction(item)}
+                      disabled={actingId !== null}
                     >
-                      Ver análisis
+                      {actingId === item.id && <Spinner className="h-3.5 w-3.5" />}
+                      Confirmar
                     </button>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-60"
-                      onClick={() => handleDownload(item)}
-                      disabled={downloadingId !== null}
+                      className="text-muted-foreground underline-offset-4 hover:underline"
+                      onClick={() => setConfirmingId(null)}
+                      disabled={actingId !== null}
                     >
-                      {downloadingId === item.id && <Spinner className="h-3.5 w-3.5" />}
-                      Descargar
+                      Cancelar
                     </button>
                   </div>
                 ) : (
-                  <span className="text-muted-foreground">—</span>
+                  <div className="flex flex-wrap items-center gap-4">
+                    {item.difficulty === 'uploaded' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="font-medium text-primary underline-offset-4 hover:underline"
+                          onClick={() => setSelectedItem(item)}
+                        >
+                          Ver análisis
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-60"
+                          onClick={() => handleDownload(item)}
+                          disabled={downloadingId !== null}
+                        >
+                          {downloadingId === item.id && <Spinner className="h-3.5 w-3.5" />}
+                          Descargar
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+
+                    {showDeletedLabel && item.deleted_at && (
+                      <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        Eliminado por el usuario
+                      </span>
+                    )}
+                  </div>
                 )}
               </td>
+
+              {rowAction && (
+                <td className="py-3 text-right">
+                  {confirmingId !== item.id &&
+                    (actingId === item.id ? (
+                      <Spinner className="ml-auto h-4 w-4" />
+                    ) : rowAction === 'delete' ? (
+                      <button
+                        type="button"
+                        title="Eliminar"
+                        aria-label="Eliminar análisis"
+                        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                        onClick={() => setConfirmingId(item.id)}
+                        disabled={actingId !== null}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Restaurar"
+                        aria-label="Restaurar análisis"
+                        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-40"
+                        onClick={() => runRowAction(item)}
+                        disabled={actingId !== null}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    ))}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -275,6 +374,8 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [tab, setTab] = useState<'active' | 'deleted'>('active');
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -283,7 +384,7 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
       setCurrentUser(getStoredUser());
 
       try {
-        setItems(await getHistory());
+        setItems(await getHistory(tab === 'deleted'));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'No se pudo cargar el historial');
       } finally {
@@ -292,7 +393,23 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
     };
 
     load();
-  }, []);
+  }, [tab]);
+
+  const changeTab = (next: 'active' | 'deleted') => {
+    setNotice(null);
+    setTab(next);
+  };
+
+  const handleRowAction = async (item: HistoryItem) => {
+    if (tab === 'active') {
+      await deleteHistoryItem(item.id);
+      setNotice('El análisis se eliminó de tu historial. Puedes restaurarlo desde "Eliminados".');
+    } else {
+      await restoreHistoryItem(item.id);
+      setNotice('El análisis se restauró en tu historial.');
+    }
+    setItems((current) => current.filter((entry) => entry.id !== item.id));
+  };
 
   return (
     <div className="space-y-6">
@@ -319,7 +436,29 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
           </CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="inline-flex rounded-lg border p-1 text-sm" role="tablist">
+            {([
+              ['active', 'Mis análisis'],
+              ['deleted', 'Eliminados'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={tab === value}
+                onClick={() => changeTab(value)}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  tab === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {notice && <p className="text-sm text-green-700 dark:text-green-400">{notice}</p>}
+
           {loading ? (
             <div className="flex items-center gap-3 py-8 text-muted-foreground">
               <Spinner className="h-5 w-5" />
@@ -328,7 +467,14 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
           ) : error ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : (
-            <HistoryResultsTable items={items} getUser={() => currentUser} showUserColumn={false} />
+            <HistoryResultsTable
+              items={items}
+              getUser={() => currentUser}
+              showUserColumn={false}
+              rowAction={tab === 'active' ? 'delete' : 'restore'}
+              onRowAction={handleRowAction}
+              emptyMessage={tab === 'active' ? 'Todavía no existen resultados guardados.' : 'No tienes análisis eliminados.'}
+            />
           )}
         </CardContent>
       </Card>
