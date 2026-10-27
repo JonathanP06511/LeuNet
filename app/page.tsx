@@ -140,7 +140,7 @@ function PublicHome({ onLogin }: { onLogin: () => void }) {
       <section id="modulos" className="px-4 py-14">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold">Módulos del sistema</h2>
+            <h2 className="text-2xl font-bold">Funciones del sistema</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             <Card>

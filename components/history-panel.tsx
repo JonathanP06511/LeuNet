@@ -519,7 +519,6 @@ export function HistoryPanel({ onBack }: HistoryPanelProps) {
   const handleRowAction = async (item: HistoryItem) => {
     if (tab === 'active') {
       await deleteHistoryItem(item.id);
-      setNotice('El análisis se eliminó de tu historial. Puedes restaurarlo desde "Eliminados".');
     } else {
       await restoreHistoryItem(item.id);
       setNotice('El análisis se restauró en tu historial.');

@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react';
 import {
-  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Eye,
@@ -223,13 +222,6 @@ export function UserGuide({ onBack }: { onBack?: () => void }) {
             </ul>
           </div>
         </div>
-      </GuideSection>
-
-      <GuideSection icon={AlertTriangle} title="Limitaciones">
-        <ul className="list-disc space-y-1.5 pl-5">
-          <li>LeuNet es un prototipo académico de apoyo y puede equivocarse, con falsos positivos o falsos negativos.</li>
-          <li>La calidad del resultado depende de la calidad de la imagen y de que la tinción sea similar a la del entrenamiento.</li>
-        </ul>
       </GuideSection>
 
       <GuideSection icon={HelpCircle} title="Preguntas frecuentes">
